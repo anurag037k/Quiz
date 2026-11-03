@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure Admin - Vidhiora Grand Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: { extend: { colors: { navy: '#0b1120', panel: '#1e293b', gold: '#fbbf24' } } }
+        }
+    </script>
+</head>
+<body class="bg-navy text-gray-200 min-h-screen p-8 font-sans">
+
+    <!-- ADMIN LOGIN -->
+    <div id="admin-login-screen" class="max-w-md mx-auto bg-panel p-8 rounded-lg shadow-lg mt-20 text-center">
+        <h2 class="text-2xl font-bold text-white mb-2">Vidhiora Admin Portal</h2>
+        <p class="text-gray-400 text-sm mb-6">Enter Admin Secret Key</p>
+        <input type="password" id="admin-password-input" placeholder="Admin Secret Key" class="w-full mb-4 px-4 py-2 bg-navy border border-gray-600 rounded text-white focus:outline-none focus:border-gold">
+        <button id="password-login-btn" class="bg-blue-600 text-white px-6 py-2 rounded font-bold w-full hover:bg-blue-500">Login to Dashboard</button>
+        <p id="login-error" class="text-red-400 text-xs mt-3 hidden">Invalid Admin Secret Key.</p>
+        <div class="mt-6 text-xs text-gray-500">
+            <a href="index.html" class="hover:text-gold">← Return to Exam Home</a>
+        </div>
+    </div>
+
+    <!-- ADMIN DASHBOARD -->
+    <div id="admin-dashboard-content" class="hidden max-w-5xl mx-auto mt-10">
+        <div class="flex justify-between items-center mb-6 bg-panel border border-gray-700 p-4 rounded-lg shadow-md">
+            <span class="text-sm text-green-400 font-mono">Authenticated Session</span>
+            <button id="logout-btn" class="bg-red-600 hover:bg-red-500 text-white px-4 py-1 rounded text-xs font-bold">Logout</button>
+        </div>
+
+        <!-- Live Anti-Cheat Monitor -->
+        <div class="mb-8 border border-gray-700 p-6 rounded-lg bg-navy/50 shadow-md">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-bold text-red-500">🔴 Live Anti-Cheat Monitor</h3>
+                <span class="bg-red-600 text-white px-3 py-1 rounded text-xs font-bold animate-pulse">Monitoring Active</span>
+            </div>
+            <div id="violation-logs" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-h-[600px] overflow-y-auto pr-2">
+                <p class="text-gray-400 italic col-span-full">Waiting for exam data...</p>
+            </div>
+        </div>
+
+        <!-- Leaderboard -->
+        <div class="mb-8 border border-gray-700 p-6 rounded-lg bg-navy/50 shadow-md">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-bold text-gold">🏆 Candidate Leaderboard</h3>
+                <span class="bg-blue-600 text-white px-3 py-1 rounded text-xs font-bold">Real-time Ranking</span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs text-gray-300">
+                    <thead>
+                        <tr class="border-b border-gray-700 text-gold">
+                            <th class="py-2 px-4">Rank</th>
+                            <th class="py-2 px-4">Candidate Name</th>
+                            <th class="py-2 px-4">University / Roll ID</th>
+                            <th class="py-2 px-4">Score</th>
+                            <th class="py-2 px-4">Submitted At</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leaderboard-table-body">
+                        <tr><td colspan="5" class="py-4 text-center text-gray-500">Loading leaderboard rankings...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+<script>
+    let activeAdminSecret = "";
+    let pollingTimer = null;
+
+    const loginScreen = document.getElementById('admin-login-screen');
+    const dashboard = document.getElementById('admin-dashboard-content');
+    const errorEl = document.getElementById('login-error');
+
+    document.getElementById('password-login-btn').addEventListener('click', async () => {
+        const pass = document.getElementById('admin-password-input').value.trim();
+        if (!pass) return;
+
+        activeAdminSecret = pass;
+        const success = await fetchAdminData();
+        if (success) {
+            errorEl.classList.add('hidden');
+            loginScreen.classList.add('hidden');
+            dashboard.classList.remove('hidden');
+            pollingTimer = setInterval(fetchAdminData, 5000);
+        } else {
+            errorEl.classList.remove('hidden');
+        }
+    });
+
+    document.getElementById('logout-btn').addEventListener('click', () => {
+        if (pollingTimer) clearInterval(pollingTimer);
+        activeAdminSecret = "";
+        dashboard.classList.add('hidden');
+        loginScreen.classList.remove('hidden');
+    });
+
+    async function fetchAdminData() {
+        try {
+            const res = await fetch('/api/admin', {
+                headers: { 'x-admin-secret': activeAdminSecret }
+            });
+            if (!res.ok) return false;
+            
+            const data = await res.json();
+            renderLeaderboard(data.results);
+            renderViolations(data.violations);
+            return true;
+        } catch (e) {
+            console.error("Authentication failed", e);
+            return false;
+        }
+    }
+
+    function renderLeaderboard(results) {
+        const tbody = document.getElementById('leaderboard-table-body');
+        if (!results || results.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="5" class="py-4 text-center text-gray-400">No submissions recorded yet.</td></tr>`;
+            return;
+        }
+        
+        tbody.innerHTML = "";
+        results.forEach((data, index) => {
+            const rank = index + 1;
+            const timeStr = new Date(data.timestamp).toLocaleTimeString();
+            let rankBadge = `<span class="font-bold text-gray-400">#${rank}</span>`;
+            if (rank === 1) rankBadge = `<span class="bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded font-bold">🥇 1st</span>`;
+            
+            tbody.innerHTML += `
+                <tr class="border-b border-gray-800 hover:bg-gray-800/50">
+                    <td class="py-3 px-4">${rankBadge}</td>
+                    <td class="py-3 px-4 font-semibold text-white">${data.name || 'N/A'}</td>
+                    <td class="py-3 px-4 font-mono text-gray-300">${data.email || 'N/A'}</td>
+                    <td class="py-3 px-4 text-gold font-bold text-sm">${data.score} / ${data.total || 100}</td>
+                    <td class="py-3 px-4 text-gray-400">${timeStr}</td>
+                </tr>
+            `;
+        });
+    }
+
+    function renderViolations(violations) {
+        const container = document.getElementById('violation-logs');
+        if (!violations || violations.length === 0) {
+            container.innerHTML = '<p class="text-green-400 font-bold col-span-full">✅ No cheating violations recorded yet.</p>';
+            return;
+        }
+        
+        container.innerHTML = '';
+        violations.forEach(data => {
+            const time = new Date(data.timestamp).toLocaleTimeString();
+            container.innerHTML += `
+                <div class="bg-panel border border-red-600/50 rounded-lg p-4 shadow-lg flex flex-col">
+                    <div class="relative mb-4">
+                        <img src="${data.snapshotUrl}" class="w-full h-48 object-cover rounded border border-gray-600">
+                        <span class="absolute top-2 right-2 bg-black bg-opacity-75 text-red-500 text-xs font-bold px-2 py-1 rounded">${time}</span>
+                    </div>
+                    <h3 class="text-red-400 font-bold text-base leading-tight mb-3">${data.violation}</h3>
+                    <div class="mt-auto bg-navy p-3 rounded border border-gray-700">
+                        <p class="text-gray-400 text-xs mb-1 uppercase tracking-wider">Candidate ID</p>
+                        <p class="font-mono text-white text-sm font-bold truncate">${data.email}</p>
+                    </div>
+                </div>
+            `;
+        });
+    }
+</script>
+</body>
+</html>
